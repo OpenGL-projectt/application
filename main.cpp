@@ -22,6 +22,10 @@ const aiScene* scene = nullptr;
 Assimp::Importer importer;
 std::string modelPath = "drone.obj"; // Chemin pour macOS
 
+// Sélection
+int selectedMesh = -1; // Indice du mesh sélectionné
+bool selectionMode = false; // Mode de sélection activé/désactivé
+
 // Fonction pour charger le modèle et calculer la distance initiale
 float calculateInitialDistance(const aiScene* scene) {
     aiVector3D min(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -43,7 +47,21 @@ float calculateInitialDistance(const aiScene* scene) {
     aiVector3D size = max - min;
     return std::max({size.x, size.y, size.z}) * 2.0f; // Distance en fonction de la taille du modèle
 }
+void mouseMotion(int x, int y) {
+    if (isDragging && !selectionMode) { // Rotation uniquement si le mode de sélection est désactivé
+        cameraAngleY += (x - lastMouseX) * 0.2f; // Mettre à jour l'angle horizontal
+        cameraAngleX += (y - lastMouseY) * 0.2f; // Mettre à jour l'angle vertical
 
+        // Limiter l'angle vertical pour éviter des rotations excessives
+        if (cameraAngleX > 89.0f) cameraAngleX = 89.0f;
+        if (cameraAngleX < -89.0f) cameraAngleX = -89.0f;
+
+        lastMouseX = x; // Mettre à jour la dernière position X de la souris
+        lastMouseY = y; // Mettre à jour la dernière position Y de la souris
+
+        glutPostRedisplay(); // Redessiner la scène
+    }
+}
 void loadModel(const std::string& path) {
     scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_JoinIdenticalVertices);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -52,15 +70,39 @@ void loadModel(const std::string& path) {
     }
     std::cout << "Modèle chargé avec succès : " << path << std::endl;
 
+    // Afficher le nombre de meshes
+    std::cout << "Nombre de meshes dans le modèle : " << scene->mNumMeshes << std::endl;
+
+    // Afficher les noms des meshes
+    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        aiMesh* mesh = scene->mMeshes[i];
+        std::string meshName = mesh->mName.C_Str(); // Récupérer le nom du mesh
+        std::cout << "Mesh " << i << " : " << meshName << std::endl;
+    }
+
     // Ajuster la distance de la caméra
     cameraDistance = calculateInitialDistance(scene);
 }
 
 // Fonction récursive pour dessiner le modèle
-void renderNode(const aiNode* node, const aiScene* scene) {
+void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = false) {
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
-        aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+        int meshIndex = node->mMeshes[i]; // Correct index of the mesh
 
+        if (selectionMode) {
+            // En mode sélection, on utilise l'indice du mesh comme identifiant
+            glPushName(meshIndex); // Utiliser l'indice du mesh comme identifiant
+        }
+
+        if (!selectionMode && selectedMesh == meshIndex) {
+            // Si le mesh est sélectionné, on le colore en bleu
+            glColor3f(0.0f, 0.0f, 1.0f);
+        } else {
+            // Sinon, on utilise la couleur par défaut
+            glColor3f(1.0f, 1.0f, 1.0f);
+        }
+
+        aiMesh* mesh = scene->mMeshes[meshIndex]; // Correctly getting mesh from scene using index
         glBegin(GL_TRIANGLES);
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
@@ -79,10 +121,14 @@ void renderNode(const aiNode* node, const aiScene* scene) {
             }
         }
         glEnd();
+
+        if (selectionMode) {
+            glPopName(); // Retirer l'identifiant du mesh de la pile
+        }
     }
 
     for (unsigned int i = 0; i < node->mNumChildren; i++) {
-        renderNode(node->mChildren[i], scene);
+        renderNode(node->mChildren[i], scene, selectionMode);
     }
 }
 
@@ -133,28 +179,95 @@ void display() {
     glutSwapBuffers();
 }
 
-// Gestion des événements souris
-void mouseMotion(int x, int y) {
-    if (isDragging) {
-        cameraAngleY += (x - lastMouseX) * 0.2f;
-        cameraAngleX += (y - lastMouseY) * 0.2f;
-        lastMouseX = x;
-        lastMouseY = y;
-        glutPostRedisplay();
+// Fonction de sélection d'un objet
+void selectObject(int x, int y, bool addToSelection) {
+    GLuint buffer[512];
+    GLint viewport[4];
+
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    glSelectBuffer(512, buffer);
+    glRenderMode(GL_SELECT);
+
+    glInitNames();
+    glPushName(0);
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluPickMatrix(x, viewport[3] - y, 5.0, 5.0, viewport);
+    gluPerspective(45.0, (double)viewport[2] / (double)viewport[3], 0.1, 100.0);
+    glMatrixMode(GL_MODELVIEW);
+
+    glPushMatrix();
+    glLoadIdentity();
+    glTranslatef(0.0f, 0.0f, -cameraDistance);
+    glRotatef(cameraAngleX, 1.0f, 0.0f, 0.0f);
+    glRotatef(cameraAngleY, 0.0f, 1.0f, 0.0f);
+    glTranslatef(-cameraPosX, -cameraPosY, 0.0f);
+
+    // Parcourir tous les meshes du modèle
+    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        glLoadName(i); // Utiliser l'indice du mesh comme identifiant
+
+        aiMesh* mesh = scene->mMeshes[i];
+        glBegin(GL_TRIANGLES);
+        for (unsigned int j = 0; j < mesh->mNumFaces; ++j) {
+            aiFace face = mesh->mFaces[j];
+            for (unsigned int k = 0; k < face.mNumIndices; ++k) {
+                unsigned int index = face.mIndices[k];
+                aiVector3D vertex = mesh->mVertices[index];
+                glVertex3f(vertex.x, vertex.y, vertex.z);
+            }
+        }
+        glEnd();
     }
+
+    glPopMatrix();
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+
+    GLint hits = glRenderMode(GL_RENDER);
+    if (hits > 0) {
+        int selectedIdx = buffer[3]; // Récupérer l'indice du mesh sélectionné
+        if (addToSelection) {
+            if (selectedMesh == selectedIdx) {
+                selectedMesh = -1; // Désélectionner si déjà sélectionné
+                std::cout << "Mesh désélectionnée : " << scene->mMeshes[selectedIdx]->mName.C_Str() << "\n";
+            } else {
+                selectedMesh = selectedIdx; // Sélectionner le mesh
+                aiMesh* mesh = scene->mMeshes[selectedMesh];
+                std::cout << "Mesh sélectionnée : " << mesh->mName.C_Str() << "\n";
+            }
+        } else {
+            selectedMesh = selectedIdx; // Sélectionner le mesh
+            aiMesh* mesh = scene->mMeshes[selectedMesh];
+            std::cout << "Mesh sélectionnée : " << mesh->mName.C_Str() << "\n";
+        }
+    } else {
+        if (!addToSelection) {
+            selectedMesh = -1; // Aucun mesh sélectionné
+        }
+    }
+
+    glutPostRedisplay();
 }
 
+// Gestion des événements souris
 void mouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        isDragging = true;
-        lastMouseX = x;
-        lastMouseY = y;
+        if (selectionMode) {
+            bool addToSelection = (glutGetModifiers() & GLUT_ACTIVE_SHIFT); // Vérifier si Shift est enfoncé
+            selectObject(x, y, addToSelection);
+        } else {
+            // Rotation de la caméra
+            isDragging = true;
+            lastMouseX = x;
+            lastMouseY = y;
+        }
     } else if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
         isDragging = false;
-    } else if (button == GLUT_RIGHT_BUTTON) {
-        cameraDistance += (state == GLUT_DOWN) ? -0.5f : 0.5f;
-        if (cameraDistance < 1.0f) cameraDistance = 1.0f;
-        glutPostRedisplay();
     }
 }
 
@@ -162,25 +275,20 @@ void mouse(int button, int state, int x, int y) {
 void keyboard(unsigned char key, int x, int y) {
     switch (key) {
         case 's':
-            cameraPosY += 1.0f;
+            // Activer/désactiver le mode de sélection
+            selectionMode = !selectionMode;
+            std::cout << "Mode sélection : " << (selectionMode ? "activé" : "désactivé") << std::endl;
             break;
         case 'w':
             cameraPosY -= 1.0f;
             break;
-        case 'd':
-            cameraPosX -= 1.0f;
-            break;
         case 'a':
             cameraPosX += 1.0f;
             break;
-        case 'r':
-            cameraAngleX = 0.0f;
-            cameraAngleY = 0.0f;
-            cameraDistance = 5.0f;
-            cameraPosX = 0.0f;
-            cameraPosY = 0.0f;
+        case 'd':
+            cameraPosX -= 1.0f;
             break;
-        case 27:
+        case 27: // Touche Échap
             exit(0);
     }
     glutPostRedisplay();
