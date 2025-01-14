@@ -36,6 +36,16 @@ float selectedMeshTranslateX = 0.0f; // Déplacement en X des meshes sélectionn
 float selectedMeshTranslateY = 0.0f; // Déplacement en Y des meshes sélectionnés
 float selectedMeshTranslateZ = 0.0f; // Déplacement en Z des meshes sélectionnés
 
+// Sources de lumière
+const int NUM_LIGHTS = 4; // Nombre de sources de lumière (sud, nord, ouest, est)
+bool lightEnabled[NUM_LIGHTS] = {true, true, true, true}; // État des sources de lumière
+GLfloat lightColors[NUM_LIGHTS][4] = {
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Lumière sud (blanche par défaut)
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Lumière nord (blanche par défaut)
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Lumière ouest (blanche par défaut)
+    {1.0f, 1.0f, 1.0f, 1.0f}  // Lumière est (blanche par défaut)
+};
+
 // Fonction pour charger le modèle et calculer la distance initiale
 float calculateInitialDistance(const aiScene* scene) {
     aiVector3D min(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -148,11 +158,24 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
 // Initialiser OpenGL
 void initOpenGL() {
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHTING); // Activer l'éclairage
     glEnable(GL_COLOR_MATERIAL);
-    GLfloat lightPosition[] = {1.0f, 1.0f, 1.0f, 0.0f};
-    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+
+    // Configurer les propriétés des sources de lumière
+    GLfloat lightPosition[NUM_LIGHTS][4] = {
+        {0.0f, -1.0f, 0.0f, 0.0f}, // Lumière sud (directionnelle)
+        {0.0f, 1.0f, 0.0f, 0.0f},  // Lumière nord (directionnelle)
+        {-1.0f, 0.0f, 0.0f, 0.0f}, // Lumière ouest (directionnelle)
+        {1.0f, 0.0f, 0.0f, 0.0f}   // Lumière est (directionnelle)
+    };
+
+    for (int i = 0; i < NUM_LIGHTS; ++i) {
+        glLightfv(GL_LIGHT0 + i, GL_POSITION, lightPosition[i]);
+        glLightfv(GL_LIGHT0 + i, GL_DIFFUSE, lightColors[i]);
+        glLightfv(GL_LIGHT0 + i, GL_SPECULAR, lightColors[i]);
+        glEnable(GL_LIGHT0 + i); // Activer la lumière par défaut
+    }
+
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 }
 
@@ -314,7 +337,7 @@ void keyboard(unsigned char key, int x, int y) {
             break;
         case 'w':
             if (!selectionMode && !selectedMeshes.empty()) {
-                selectedMeshTranslateY += 1.0f; // Déplacer les meshes sélectionnés vers le bas
+                selectedMeshTranslateY += 1.0f; // Déplacer les meshes sélectionnés vers le haut
             } else {
                 cameraPosY -= 1.0f; // Déplacer la caméra vers le bas
             }
@@ -337,7 +360,7 @@ void keyboard(unsigned char key, int x, int y) {
             if (!selectionMode && !selectedMeshes.empty()) {
                 selectedMeshTranslateY -= 1.0f; // Déplacer les meshes sélectionnés vers le bas
             } else {
-                cameraPosY += 1.0f; // Déplacer la caméra vers le bas
+                cameraPosY += 1.0f; // Déplacer la caméra vers le haut
             }
             break;
         case 'h': // Touche H pour masquer/afficher les éléments sélectionnés
@@ -346,6 +369,49 @@ void keyboard(unsigned char key, int x, int y) {
                     meshVisibility[meshIndex] = !meshVisibility[meshIndex]; // Basculer la visibilité
                     std::cout << "Mesh " << meshIndex << " (" << scene->mMeshes[meshIndex]->mName.C_Str() << ") : "
                               << (meshVisibility[meshIndex] ? "visible" : "masqué") << "\n";
+                }
+                glutPostRedisplay(); // Redessiner la scène
+            }
+            break;
+        case 'r': // Touche R pour changer la couleur de la lumière en rouge
+        case 'g': // Touche G pour changer la couleur de la lumière en vert
+        case 'b': // Touche B pour changer la couleur de la lumière en bleu
+            {
+                int lightIndex = 0; // Par défaut, changer la lumière sud
+                GLfloat newColor[4] = {0.0f, 0.0f, 0.0f, 1.0f}; // Nouvelle couleur
+
+                if (key == 'r') {
+                    newColor[0] = 1.0f; // Rouge
+                } else if (key == 'g') {
+                    newColor[1] = 1.0f; // Vert
+                } else if (key == 'b') {
+                    newColor[2] = 1.0f; // Bleu
+                }
+
+                // Appliquer la nouvelle couleur à la lumière sud
+                glLightfv(GL_LIGHT0 + lightIndex, GL_DIFFUSE, newColor);
+                glLightfv(GL_LIGHT0 + lightIndex, GL_SPECULAR, newColor);
+                std::cout << "Couleur de la lumière sud changée en ";
+                if (key == 'r') std::cout << "rouge\n";
+                else if (key == 'g') std::cout << "vert\n";
+                else if (key == 'b') std::cout << "bleu\n";
+                glutPostRedisplay(); // Redessiner la scène
+            }
+            break;
+        case '1': // Touche 1 pour activer/désactiver la lumière sud
+        case '2': // Touche 2 pour activer/désactiver la lumière nord
+        case '3': // Touche 3 pour activer/désactiver la lumière ouest
+        case '4': // Touche 4 pour activer/désactiver la lumière est
+            {
+                int lightIndex = key - '1'; // Convertir la touche en indice de lumière (0 à 3)
+                lightEnabled[lightIndex] = !lightEnabled[lightIndex]; // Basculer l'état de la lumière
+
+                if (lightEnabled[lightIndex]) {
+                    glEnable(GL_LIGHT0 + lightIndex); // Activer la lumière
+                    std::cout << "Lumière " << lightIndex + 1 << " activée\n";
+                } else {
+                    glDisable(GL_LIGHT0 + lightIndex); // Désactiver la lumière
+                    std::cout << "Lumière " << lightIndex + 1 << " désactivée\n";
                 }
                 glutPostRedisplay(); // Redessiner la scène
             }
