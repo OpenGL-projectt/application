@@ -6,6 +6,7 @@
 #include <vector>
 #include <cfloat>
 #include <set> // Pour gérer la sélection multiple
+#include <unordered_map> // Pour gérer la visibilité des meshes
 
 // Paramètres de la caméra
 float cameraAngleX = 0.0f;
@@ -26,6 +27,9 @@ std::string modelPath = "drone.obj"; // Chemin pour macOS
 // Sélection
 std::set<int> selectedMeshes; // Liste des meshes sélectionnés
 bool selectionMode = false; // Mode de sélection activé/désactivé
+
+// Visibilité des meshes
+std::unordered_map<int, bool> meshVisibility; // Carte pour stocker la visibilité des meshes
 
 // Fonction pour charger le modèle et calculer la distance initiale
 float calculateInitialDistance(const aiScene* scene) {
@@ -65,6 +69,9 @@ void loadModel(const std::string& path) {
         aiMesh* mesh = scene->mMeshes[i];
         std::string meshName = mesh->mName.C_Str(); // Récupérer le nom du mesh
         std::cout << "Mesh " << i << " : " << meshName << std::endl;
+
+        // Initialiser la visibilité du mesh à true (visible par défaut)
+        meshVisibility[i] = true;
     }
 
     // Ajuster la distance de la caméra
@@ -75,6 +82,11 @@ void loadModel(const std::string& path) {
 void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = false) {
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
         int meshIndex = node->mMeshes[i]; // Correct index of the mesh
+
+        // Vérifier si le mesh est visible
+        if (!meshVisibility[meshIndex]) {
+            continue; // Passer au mesh suivant si celui-ci est masqué
+        }
 
         if (selectionMode) {
             // En mode sélection, on utilise l'indice du mesh comme identifiant
@@ -294,6 +306,16 @@ void keyboard(unsigned char key, int x, int y) {
             break;
         case 'd':
             cameraPosX -= 1.0f;
+            break;
+        case 'h': // Touche H pour masquer/afficher les éléments sélectionnés
+            if (!selectedMeshes.empty()) {
+                for (int meshIndex : selectedMeshes) {
+                    meshVisibility[meshIndex] = !meshVisibility[meshIndex]; // Basculer la visibilité
+                    std::cout << "Mesh " << meshIndex << " (" << scene->mMeshes[meshIndex]->mName.C_Str() << ") : "
+                              << (meshVisibility[meshIndex] ? "visible" : "masqué") << "\n";
+                }
+                glutPostRedisplay(); // Redessiner la scène
+            }
             break;
         case 27: // Touche Échap
             exit(0);
