@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <cfloat>
+#include <set> // Pour gérer la sélection multiple
 
 // Paramètres de la caméra
 float cameraAngleX = 0.0f;
@@ -23,7 +24,7 @@ Assimp::Importer importer;
 std::string modelPath = "drone.obj"; // Chemin pour macOS
 
 // Sélection
-int selectedMesh = -1; // Indice du mesh sélectionné
+std::set<int> selectedMeshes; // Liste des meshes sélectionnés
 bool selectionMode = false; // Mode de sélection activé/désactivé
 
 // Fonction pour charger le modèle et calculer la distance initiale
@@ -47,21 +48,7 @@ float calculateInitialDistance(const aiScene* scene) {
     aiVector3D size = max - min;
     return std::max({size.x, size.y, size.z}) * 2.0f; // Distance en fonction de la taille du modèle
 }
-void mouseMotion(int x, int y) {
-    if (isDragging && !selectionMode) { // Rotation uniquement si le mode de sélection est désactivé
-        cameraAngleY += (x - lastMouseX) * 0.2f; // Mettre à jour l'angle horizontal
-        cameraAngleX += (y - lastMouseY) * 0.2f; // Mettre à jour l'angle vertical
 
-        // Limiter l'angle vertical pour éviter des rotations excessives
-        if (cameraAngleX > 89.0f) cameraAngleX = 89.0f;
-        if (cameraAngleX < -89.0f) cameraAngleX = -89.0f;
-
-        lastMouseX = x; // Mettre à jour la dernière position X de la souris
-        lastMouseY = y; // Mettre à jour la dernière position Y de la souris
-
-        glutPostRedisplay(); // Redessiner la scène
-    }
-}
 void loadModel(const std::string& path) {
     scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_JoinIdenticalVertices);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -94,7 +81,7 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
             glPushName(meshIndex); // Utiliser l'indice du mesh comme identifiant
         }
 
-        if (!selectionMode && selectedMesh == meshIndex) {
+        if (!selectionMode && selectedMeshes.find(meshIndex) != selectedMeshes.end()) {
             // Si le mesh est sélectionné, on le colore en bleu
             glColor3f(0.0f, 0.0f, 1.0f);
         } else {
@@ -231,23 +218,26 @@ void selectObject(int x, int y, bool addToSelection) {
     GLint hits = glRenderMode(GL_RENDER);
     if (hits > 0) {
         int selectedIdx = buffer[3]; // Récupérer l'indice du mesh sélectionné
+
         if (addToSelection) {
-            if (selectedMesh == selectedIdx) {
-                selectedMesh = -1; // Désélectionner si déjà sélectionné
+            // Si la touche Shift est enfoncée, ajouter ou retirer le mesh de la sélection
+            if (selectedMeshes.find(selectedIdx) != selectedMeshes.end()) {
+                selectedMeshes.erase(selectedIdx); // Désélectionner
                 std::cout << "Mesh désélectionnée : " << scene->mMeshes[selectedIdx]->mName.C_Str() << "\n";
             } else {
-                selectedMesh = selectedIdx; // Sélectionner le mesh
-                aiMesh* mesh = scene->mMeshes[selectedMesh];
-                std::cout << "Mesh sélectionnée : " << mesh->mName.C_Str() << "\n";
+                selectedMeshes.insert(selectedIdx); // Sélectionner
+                std::cout << "Mesh sélectionnée : " << scene->mMeshes[selectedIdx]->mName.C_Str() << "\n";
             }
         } else {
-            selectedMesh = selectedIdx; // Sélectionner le mesh
-            aiMesh* mesh = scene->mMeshes[selectedMesh];
-            std::cout << "Mesh sélectionnée : " << mesh->mName.C_Str() << "\n";
+            // Si la touche Shift n'est pas enfoncée, vider la sélection et sélectionner le nouveau mesh
+            selectedMeshes.clear();
+            selectedMeshes.insert(selectedIdx);
+            std::cout << "Mesh sélectionnée : " << scene->mMeshes[selectedIdx]->mName.C_Str() << "\n";
         }
     } else {
         if (!addToSelection) {
-            selectedMesh = -1; // Aucun mesh sélectionné
+            // Si aucun mesh n'est sélectionné et que la touche Shift n'est pas enfoncée, vider la sélection
+            selectedMeshes.clear();
         }
     }
 
@@ -268,6 +258,23 @@ void mouse(int button, int state, int x, int y) {
         }
     } else if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
         isDragging = false;
+    }
+}
+
+// Gestion du déplacement de la souris
+void mouseMotion(int x, int y) {
+    if (isDragging && !selectionMode) { // Rotation uniquement si le mode de sélection est désactivé
+        cameraAngleY += (x - lastMouseX) * 0.2f; // Mettre à jour l'angle horizontal
+        cameraAngleX += (y - lastMouseY) * 0.2f; // Mettre à jour l'angle vertical
+
+        // Limiter l'angle vertical pour éviter des rotations excessives
+        if (cameraAngleX > 89.0f) cameraAngleX = 89.0f;
+        if (cameraAngleX < -89.0f) cameraAngleX = -89.0f;
+
+        lastMouseX = x; // Mettre à jour la dernière position X de la souris
+        lastMouseY = y; // Mettre à jour la dernière position Y de la souris
+
+        glutPostRedisplay(); // Redessiner la scène
     }
 }
 
