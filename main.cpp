@@ -31,6 +31,11 @@ bool selectionMode = false; // Mode de sélection activé/désactivé
 // Visibilité des meshes
 std::unordered_map<int, bool> meshVisibility; // Carte pour stocker la visibilité des meshes
 
+// Déplacement des meshes sélectionnés
+float selectedMeshTranslateX = 0.0f; // Déplacement en X des meshes sélectionnés
+float selectedMeshTranslateY = 0.0f; // Déplacement en Y des meshes sélectionnés
+float selectedMeshTranslateZ = 0.0f; // Déplacement en Z des meshes sélectionnés
+
 // Fonction pour charger le modèle et calculer la distance initiale
 float calculateInitialDistance(const aiScene* scene) {
     aiVector3D min(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -102,6 +107,13 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
         }
 
         aiMesh* mesh = scene->mMeshes[meshIndex]; // Correctly getting mesh from scene using index
+
+        // Appliquer le déplacement aux meshes sélectionnés
+        glPushMatrix();
+        if (!selectionMode && selectedMeshes.find(meshIndex) != selectedMeshes.end()) {
+            glTranslatef(selectedMeshTranslateX, selectedMeshTranslateY, selectedMeshTranslateZ);
+        }
+
         glBegin(GL_TRIANGLES);
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
@@ -120,6 +132,8 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
             }
         }
         glEnd();
+
+        glPopMatrix();
 
         if (selectionMode) {
             glPopName(); // Retirer l'identifiant du mesh de la pile
@@ -299,13 +313,32 @@ void keyboard(unsigned char key, int x, int y) {
             std::cout << "Mode sélection : " << (selectionMode ? "activé" : "désactivé") << std::endl;
             break;
         case 'w':
-            cameraPosY -= 1.0f;
+            if (!selectionMode && !selectedMeshes.empty()) {
+                selectedMeshTranslateY += 1.0f; // Déplacer les meshes sélectionnés vers le bas
+            } else {
+                cameraPosY -= 1.0f; // Déplacer la caméra vers le bas
+            }
             break;
         case 'a':
-            cameraPosX += 1.0f;
+            if (!selectionMode && !selectedMeshes.empty()) {
+                selectedMeshTranslateX -= 1.0f; // Déplacer les meshes sélectionnés vers la gauche
+            } else {
+                cameraPosX += 1.0f; // Déplacer la caméra vers la gauche
+            }
             break;
         case 'd':
-            cameraPosX -= 1.0f;
+            if (!selectionMode && !selectedMeshes.empty()) {
+                selectedMeshTranslateX += 1.0f; // Déplacer les meshes sélectionnés vers la droite
+            } else {
+                cameraPosX -= 1.0f; // Déplacer la caméra vers la droite
+            }
+            break;
+        case 'x':
+            if (!selectionMode && !selectedMeshes.empty()) {
+                selectedMeshTranslateY -= 1.0f; // Déplacer les meshes sélectionnés vers le bas
+            } else {
+                cameraPosY += 1.0f; // Déplacer la caméra vers le bas
+            }
             break;
         case 'h': // Touche H pour masquer/afficher les éléments sélectionnés
             if (!selectedMeshes.empty()) {
