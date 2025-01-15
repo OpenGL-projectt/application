@@ -31,7 +31,7 @@ bool selectionMode = false; // Mode de sélection activé/désactivé
 // Visibilité des meshes
 std::unordered_map<int, bool> meshVisibility; // Carte pour stocker la visibilité des meshes
 std::unordered_map<int, GLfloat[4]> meshColors; // Carte pour stocker les couleurs des meshes
-
+std::unordered_map<int, aiVector3D> meshPositions; // Carte pour stocker les positions des meshes
 
 // Déplacement des meshes sélectionnés
 float selectedMeshTranslateX = 0.0f; // Déplacement en X des meshes sélectionnés
@@ -93,6 +93,9 @@ void loadModel(const std::string& path) {
         // Initialiser la couleur du mesh à blanc par défaut
         GLfloat defaultColor[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // Blanc
         std::copy(defaultColor, defaultColor + 4, meshColors[i]);
+
+        // Initialiser la position du mesh à (0, 0, 0)
+        meshPositions[i] = aiVector3D(0.0f, 0.0f, 0.0f);
     }
 
     // Ajuster la distance de la caméra
@@ -119,11 +122,10 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
 
         aiMesh* mesh = scene->mMeshes[meshIndex]; // Correctly getting mesh from scene using index
 
-        // Appliquer le déplacement aux meshes sélectionnés
+        // Appliquer la position du mesh
         glPushMatrix();
-        if (!selectionMode && selectedMeshes.find(meshIndex) != selectedMeshes.end()) {
-            glTranslatef(selectedMeshTranslateX, selectedMeshTranslateY, selectedMeshTranslateZ);
-        }
+        aiVector3D position = meshPositions[meshIndex];
+        glTranslatef(position.x, position.y, position.z);
 
         glBegin(GL_TRIANGLES);
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
@@ -336,30 +338,38 @@ void keyboard(unsigned char key, int x, int y) {
             selectionMode = !selectionMode;
             std::cout << "Mode sélection : " << (selectionMode ? "activé" : "désactivé") << std::endl;
             break;
-        case 'w':
+        case 'w': // Déplacer les meshes sélectionnés vers le haut
             if (!selectionMode && !selectedMeshes.empty()) {
-                selectedMeshTranslateY += 1.0f; // Déplacer les meshes sélectionnés vers le haut
+                for (int meshIndex : selectedMeshes) {
+                    meshPositions[meshIndex].y += 1.0f; // Déplacer en Y
+                }
             } else {
                 cameraPosY -= 1.0f; // Déplacer la caméra vers le bas
             }
             break;
-        case 'a':
+        case 'a': // Déplacer les meshes sélectionnés vers la gauche
             if (!selectionMode && !selectedMeshes.empty()) {
-                selectedMeshTranslateX -= 1.0f; // Déplacer les meshes sélectionnés vers la gauche
+                for (int meshIndex : selectedMeshes) {
+                    meshPositions[meshIndex].x -= 1.0f; // Déplacer en X
+                }
             } else {
                 cameraPosX += 1.0f; // Déplacer la caméra vers la gauche
             }
             break;
-        case 'd':
+        case 'd': // Déplacer les meshes sélectionnés vers la droite
             if (!selectionMode && !selectedMeshes.empty()) {
-                selectedMeshTranslateX += 1.0f; // Déplacer les meshes sélectionnés vers la droite
+                for (int meshIndex : selectedMeshes) {
+                    meshPositions[meshIndex].x += 1.0f; // Déplacer en X
+                }
             } else {
                 cameraPosX -= 1.0f; // Déplacer la caméra vers la droite
             }
             break;
-        case 'x':
+        case 'x': // Déplacer les meshes sélectionnés vers le bas
             if (!selectionMode && !selectedMeshes.empty()) {
-                selectedMeshTranslateY -= 1.0f; // Déplacer les meshes sélectionnés vers le bas
+                for (int meshIndex : selectedMeshes) {
+                    meshPositions[meshIndex].y -= 1.0f; // Déplacer en Y
+                }
             } else {
                 cameraPosY += 1.0f; // Déplacer la caméra vers le haut
             }
