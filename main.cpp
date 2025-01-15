@@ -30,6 +30,8 @@ bool selectionMode = false; // Mode de sélection activé/désactivé
 
 // Visibilité des meshes
 std::unordered_map<int, bool> meshVisibility; // Carte pour stocker la visibilité des meshes
+std::unordered_map<int, GLfloat[4]> meshColors; // Carte pour stocker les couleurs des meshes
+
 
 // Déplacement des meshes sélectionnés
 float selectedMeshTranslateX = 0.0f; // Déplacement en X des meshes sélectionnés
@@ -87,6 +89,10 @@ void loadModel(const std::string& path) {
 
         // Initialiser la visibilité du mesh à true (visible par défaut)
         meshVisibility[i] = true;
+
+        // Initialiser la couleur du mesh à blanc par défaut
+        GLfloat defaultColor[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // Blanc
+        std::copy(defaultColor, defaultColor + 4, meshColors[i]);
     }
 
     // Ajuster la distance de la caméra
@@ -108,13 +114,8 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
             glPushName(meshIndex); // Utiliser l'indice du mesh comme identifiant
         }
 
-        if (!selectionMode && selectedMeshes.find(meshIndex) != selectedMeshes.end()) {
-            // Si le mesh est sélectionné, on le colore en bleu
-            glColor3f(0.0f, 0.0f, 1.0f);
-        } else {
-            // Sinon, on utilise la couleur par défaut
-            glColor3f(1.0f, 1.0f, 1.0f);
-        }
+        // Appliquer la couleur du mesh
+        glColor4fv(meshColors[meshIndex]); // Toujours appliquer la couleur personnalisée
 
         aiMesh* mesh = scene->mMeshes[meshIndex]; // Correctly getting mesh from scene using index
 
@@ -373,11 +374,10 @@ void keyboard(unsigned char key, int x, int y) {
                 glutPostRedisplay(); // Redessiner la scène
             }
             break;
-        case 'r': // Touche R pour changer la couleur de la lumière en rouge
-        case 'g': // Touche G pour changer la couleur de la lumière en vert
-        case 'b': // Touche B pour changer la couleur de la lumière en bleu
-            {
-                int lightIndex = 0; // Par défaut, changer la lumière sud
+        case 'r': // Touche R pour changer la couleur des meshes sélectionnés en rouge
+        case 'g': // Touche G pour changer la couleur des meshes sélectionnés en vert
+        case 'b': // Touche B pour changer la couleur des meshes sélectionnés en bleu
+            if (!selectedMeshes.empty()) {
                 GLfloat newColor[4] = {0.0f, 0.0f, 0.0f, 1.0f}; // Nouvelle couleur
 
                 if (key == 'r') {
@@ -388,10 +388,12 @@ void keyboard(unsigned char key, int x, int y) {
                     newColor[2] = 1.0f; // Bleu
                 }
 
-                // Appliquer la nouvelle couleur à la lumière sud
-                glLightfv(GL_LIGHT0 + lightIndex, GL_DIFFUSE, newColor);
-                glLightfv(GL_LIGHT0 + lightIndex, GL_SPECULAR, newColor);
-                std::cout << "Couleur de la lumière sud changée en ";
+                // Appliquer la nouvelle couleur à tous les meshes sélectionnés
+                for (int meshIndex : selectedMeshes) {
+                    std::copy(newColor, newColor + 4, meshColors[meshIndex]);
+                }
+
+                std::cout << "Couleur des meshes sélectionnés changée en ";
                 if (key == 'r') std::cout << "rouge\n";
                 else if (key == 'g') std::cout << "vert\n";
                 else if (key == 'b') std::cout << "bleu\n";
