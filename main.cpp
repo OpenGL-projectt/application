@@ -103,7 +103,7 @@ void loadModel(const std::string& path) {
 }
 
 // Fonction récursive pour dessiner le modèle
-void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = false) {
+void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = false, bool renderSelectedOnly = false) {
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
         int meshIndex = node->mMeshes[i]; // Correct index of the mesh
 
@@ -112,13 +112,20 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
             continue; // Passer au mesh suivant si celui-ci est masqué
         }
 
+        // Si renderSelectedOnly est activé, ignorer les meshes non sélectionnés
+        if (renderSelectedOnly && selectedMeshes.find(meshIndex) == selectedMeshes.end()) {
+            continue;
+        }
+
         if (selectionMode) {
             // En mode sélection, on utilise l'indice du mesh comme identifiant
             glPushName(meshIndex); // Utiliser l'indice du mesh comme identifiant
         }
 
-        // Appliquer la couleur du mesh
-        glColor4fv(meshColors[meshIndex]); // Toujours appliquer la couleur personnalisée
+        // Appliquer la couleur du mesh (sauf en mode contour)
+        if (!renderSelectedOnly) {
+            glColor4fv(meshColors[meshIndex]); // Toujours appliquer la couleur personnalisée
+        }
 
         aiMesh* mesh = scene->mMeshes[meshIndex]; // Correctly getting mesh from scene using index
 
@@ -154,7 +161,7 @@ void renderNode(const aiNode* node, const aiScene* scene, bool selectionMode = f
     }
 
     for (unsigned int i = 0; i < node->mNumChildren; i++) {
-        renderNode(node->mChildren[i], scene, selectionMode);
+        renderNode(node->mChildren[i], scene, selectionMode, renderSelectedOnly);
     }
 }
 
@@ -210,9 +217,21 @@ void display() {
     glRotatef(cameraAngleY, 0.0f, 1.0f, 0.0f);
     glTranslatef(-cameraPosX, -cameraPosY, 0.0f);
 
-    // Dessiner le modèle
+    // Première passe : Rendre les meshes normalement
     if (scene && scene->mRootNode) {
         renderNode(scene->mRootNode, scene);
+    }
+
+    // Deuxième passe : Rendre les meshes sélectionnés en mode fil de fer avec un contour noir
+    if (selectionMode && !selectedMeshes.empty()) { // Vérifier si le mode sélection est activé
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // Passer en mode fil de fer
+        glLineWidth(2.0f); // Définir l'épaisseur du contour
+        glColor3f(0.0f, 0.0f, 0.0f); // Couleur noire pour le contour
+
+        // Rendre uniquement les meshes sélectionnés
+        renderNode(scene->mRootNode, scene, false, true);
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // Revenir au mode de remplissage
     }
 
     glutSwapBuffers();
