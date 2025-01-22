@@ -54,6 +54,13 @@ GLfloat lightColors[NUM_LIGHTS][4] = {
     {1.0f, 1.0f, 1.0f, 1.0f}
 };
 
+// Structure for Axis-Aligned Bounding Box
+struct AABB {
+    aiVector3D min;
+    aiVector3D max;
+};
+std::unordered_map<int, AABB> meshAABBs;
+
 // Fonction pour charger le modèle et calculer la distance initiale
 float calculateInitialDistance(const aiScene* scene) {
     aiVector3D min(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -74,6 +81,24 @@ float calculateInitialDistance(const aiScene* scene) {
 
     aiVector3D size = max - min;
     return std::max({size.x, size.y, size.z}) * 2.0f;
+}
+
+// Function to calculate AABB for a mesh
+AABB calculateMeshAABB(const aiMesh* mesh) {
+    AABB aabb;
+    aabb.min = aiVector3D(FLT_MAX, FLT_MAX, FLT_MAX);
+    aabb.max = aiVector3D(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+    for (unsigned int j = 0; j < mesh->mNumVertices; ++j) {
+        aiVector3D vertex = mesh->mVertices[j];
+        aabb.min.x = std::min(aabb.min.x, vertex.x);
+        aabb.min.y = std::min(aabb.min.y, vertex.y);
+        aabb.min.z = std::min(aabb.min.z, vertex.z);
+        aabb.max.x = std::max(aabb.max.x, vertex.x);
+        aabb.max.y = std::max(aabb.max.y, vertex.y);
+        aabb.max.z = std::max(aabb.max.z, vertex.z);
+    }
+    return aabb;
 }
 
 void loadModel(const std::string& path) {
@@ -99,7 +124,10 @@ void loadModel(const std::string& path) {
         meshPositions[i] = aiVector3D(0.0f, 0.0f, 0.0f);
         meshRotations[i] = 0.0f; // Initialize rotation
     }
-
+     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        aiMesh* mesh = scene->mMeshes[i];
+        meshAABBs[i] = calculateMeshAABB(mesh);
+    }
     cameraDistance = calculateInitialDistance(scene);
 }
 
@@ -227,17 +255,17 @@ void display() {
 }
 
 void updateAnimation() {
-     if (isAnimating && !selectedMeshes.empty()) {
-         auto currentTime = std::chrono::steady_clock::now();
-         auto elapsedSeconds = std::chrono::duration<float>(currentTime - animationStartTime).count();
+    if (isAnimating && !selectedMeshes.empty()) {
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsedSeconds = std::chrono::duration<float>(currentTime - animationStartTime).count();
          
         float rotationSpeed = 100.0f; // Rotation speed in degrees per second
          
-         for(int meshIndex : selectedMeshes) {
+        for(int meshIndex : selectedMeshes) {
             meshRotations[meshIndex] = elapsedSeconds * rotationSpeed;
-         }
+        }
 
-         glutPostRedisplay();
+        glutPostRedisplay();
     }
 }
 
@@ -348,6 +376,14 @@ void mouseMotion(int x, int y) {
     }
 }
 
+// Function to check AABB collision
+bool checkAABBCollision(const AABB& a, const AABB& b) {
+    return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+           (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+           (a.min.z <= b.max.z && a.max.z >= b.min.z);
+}
+
+bool collisionEnabled = false;
 // Gestion des événements clavier
 void keyboard(unsigned char key, int x, int y) {
     switch (key) {
@@ -355,42 +391,154 @@ void keyboard(unsigned char key, int x, int y) {
             selectionMode = !selectionMode;
             std::cout << "Mode sélection : " << (selectionMode ? "activé" : "désactivé") << std::endl;
             break;
-        case 'w':
+        case 'c':
+             collisionEnabled = !collisionEnabled;
+            std::cout << "Collision Detection : " << (collisionEnabled ? "activé" : "désactivé") << "\n";
+            break;
+        case 'w': {
             if (!selectionMode && !selectedMeshes.empty()) {
                 for (int meshIndex : selectedMeshes) {
-                    meshPositions[meshIndex].y += 1.0f;
+                    aiVector3D originalPosition = meshPositions[meshIndex];
+                    meshPositions[meshIndex].y += 0.1f;
+                    
+                    // Check for collisions
+                    bool collision = false;
+                    if (collisionEnabled) {
+                        AABB movedAABB = meshAABBs[meshIndex];
+                        movedAABB.min += meshPositions[meshIndex];
+                        movedAABB.max += meshPositions[meshIndex];
+
+                        for(const auto& pair : meshAABBs) {
+                            int otherMeshIndex = pair.first;
+                            if(otherMeshIndex != meshIndex){
+                                AABB otherAABB = pair.second;
+                                otherAABB.min += meshPositions[otherMeshIndex];
+                                otherAABB.max += meshPositions[otherMeshIndex];
+                                if(checkAABBCollision(movedAABB, otherAABB)) {
+                                    collision = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if(collision){
+                        meshPositions[meshIndex] = originalPosition; // Revert the change
+                         std::cout << "Collision detected while moving mesh " <<  scene->mMeshes[meshIndex]->mName.C_Str() << "\n";
+                    }
                 }
             } else {
-                cameraPosY -= 1.0f;
+                cameraPosY -= 0.1f;
             }
             break;
-        case 'a':
+        }
+        case 'a': {
             if (!selectionMode && !selectedMeshes.empty()) {
                 for (int meshIndex : selectedMeshes) {
-                    meshPositions[meshIndex].x -= 1.0f;
+                    aiVector3D originalPosition = meshPositions[meshIndex];
+                     meshPositions[meshIndex].x -= 0.1f;
+                     // Check for collisions
+                    bool collision = false;
+                    if (collisionEnabled) {
+                        AABB movedAABB = meshAABBs[meshIndex];
+                        movedAABB.min += meshPositions[meshIndex];
+                        movedAABB.max += meshPositions[meshIndex];
+
+                        for(const auto& pair : meshAABBs) {
+                             int otherMeshIndex = pair.first;
+                            if(otherMeshIndex != meshIndex){
+                                AABB otherAABB = pair.second;
+                                 otherAABB.min += meshPositions[otherMeshIndex];
+                                 otherAABB.max += meshPositions[otherMeshIndex];
+                                if(checkAABBCollision(movedAABB, otherAABB)) {
+                                    collision = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                     if(collision){
+                         meshPositions[meshIndex] = originalPosition; // Revert the change
+                         std::cout << "Collision detected while moving mesh " <<  scene->mMeshes[meshIndex]->mName.C_Str() << "\n";
+                    }
+
                 }
             } else {
-                cameraPosX += 1.0f;
+                cameraPosX += 0.1f;
             }
             break;
-        case 'd':
+        }
+        case 'd': {
             if (!selectionMode && !selectedMeshes.empty()) {
                 for (int meshIndex : selectedMeshes) {
-                    meshPositions[meshIndex].x += 1.0f;
+                    aiVector3D originalPosition = meshPositions[meshIndex];
+                     meshPositions[meshIndex].x += 0.1f;
+
+                    bool collision = false;
+                    if (collisionEnabled) {
+                        AABB movedAABB = meshAABBs[meshIndex];
+                        movedAABB.min += meshPositions[meshIndex];
+                        movedAABB.max += meshPositions[meshIndex];
+
+                        for(const auto& pair : meshAABBs) {
+                           int otherMeshIndex = pair.first;
+                            if(otherMeshIndex != meshIndex){
+                                AABB otherAABB = pair.second;
+                                 otherAABB.min += meshPositions[otherMeshIndex];
+                                otherAABB.max += meshPositions[otherMeshIndex];
+                                if(checkAABBCollision(movedAABB, otherAABB)) {
+                                    collision = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                     if(collision){
+                        meshPositions[meshIndex] = originalPosition; // Revert the change
+                         std::cout << "Collision detected while moving mesh " <<  scene->mMeshes[meshIndex]->mName.C_Str() << "\n";
+                    }
+
                 }
             } else {
-                cameraPosX -= 1.0f;
+                cameraPosX -= 0.1f;
             }
             break;
-        case 'x':
+        }
+         case 'x': {
              if (!selectionMode && !selectedMeshes.empty()) {
                 for (int meshIndex : selectedMeshes) {
-                    meshPositions[meshIndex].y -= 1.0f;
+                    aiVector3D originalPosition = meshPositions[meshIndex];
+                     meshPositions[meshIndex].y -= 0.1f;
+
+                     bool collision = false;
+                    if (collisionEnabled) {
+                         AABB movedAABB = meshAABBs[meshIndex];
+                        movedAABB.min += meshPositions[meshIndex];
+                        movedAABB.max += meshPositions[meshIndex];
+
+                         for(const auto& pair : meshAABBs) {
+                             int otherMeshIndex = pair.first;
+                             if(otherMeshIndex != meshIndex){
+                                AABB otherAABB = pair.second;
+                                otherAABB.min += meshPositions[otherMeshIndex];
+                                otherAABB.max += meshPositions[otherMeshIndex];
+                                if(checkAABBCollision(movedAABB, otherAABB)) {
+                                   collision = true;
+                                   break;
+                                }
+                             }
+                         }
+                    }
+                    if(collision){
+                        meshPositions[meshIndex] = originalPosition; // Revert the change
+                       std::cout << "Collision detected while moving mesh " <<  scene->mMeshes[meshIndex]->mName.C_Str() << "\n";
+                    }
+
                 }
             } else {
-                cameraPosY += 1.0f;
+                cameraPosY += 0.1f;
             }
             break;
+        }
         case 'h':
             if (!selectedMeshes.empty()) {
                 for (int meshIndex : selectedMeshes) {
@@ -413,21 +561,20 @@ void keyboard(unsigned char key, int x, int y) {
             }
             break;
         case 't':
-             isAnimating = !isAnimating;
+            isAnimating = !isAnimating;
             if (isAnimating) {
                 animationStartTime = std::chrono::steady_clock::now();
-                 std::cout << "Animation activée\n";
+                std::cout << "Animation activée\n";
             } else {
                 std::cout << "Animation désactivée\n";
             }
-           
             break;
         case 'g':
         case 'b':
             if (!selectedMeshes.empty()) {
                 GLfloat newColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
-                 if (key == 'g') {
+                if (key == 'g') {
                     newColor[1] = 1.0f;
                 } else if (key == 'b') {
                     newColor[2] = 1.0f;
@@ -438,7 +585,7 @@ void keyboard(unsigned char key, int x, int y) {
                 }
 
                 std::cout << "Couleur des meshes sélectionnés changée en ";
-                 if (key == 'g') std::cout << "vert\n";
+                if (key == 'g') std::cout << "vert\n";
                 else if (key == 'b') std::cout << "bleu\n";
                 glutPostRedisplay();
             }
@@ -493,7 +640,7 @@ int main(int argc, char** argv) {
     glutMouseWheelFunc(mouseWheel);
     
     // Timer Function to drive the animation
-     glutIdleFunc(updateAnimation);
+    glutIdleFunc(updateAnimation);
 
     glutMainLoop();
 
